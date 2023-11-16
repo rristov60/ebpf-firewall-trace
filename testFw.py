@@ -15,7 +15,7 @@ IFNAMSIZ = 16 # uapi/linux/if.h
 XT_TABLE_MAXNAMELEN = 32 # uapi/linux/netfilter/x_tables.h
 
 # Global variable which holds the final verdict
-final_verdict = -1
+final_verdict = None
 
 # Stop threads flag
 stop_flag = threading.Event()
@@ -75,9 +75,16 @@ def _get(l, index, default):
         return l[index]
     return default
 
+# Global vars used to measure performance
+start_time = None
+end_time = None
+
 # Function that checks wether destination is reachable or not from the source
 def is_reachable(cpu, data, size):
-        # Decode event
+    # Start time of decision making
+    global start_time
+    start_time = time.time()
+    # Decode event
     event = ct.cast(data, ct.POINTER(TestEvt)).contents
     # Make sure this is an interface event
     if event.flags & ROUTE_EVT_IF != ROUTE_EVT_IF:
@@ -105,6 +112,9 @@ def is_reachable(cpu, data, size):
                 final_verdict = False
             else:
                 final_verdict = True
+        # End time of decision making
+        global end_time
+        end_time = time.time()
 #endregion
 
 #region Checks
@@ -196,12 +206,15 @@ if __name__ == "__main__":
 
     # eBPF policy test and probe poll
     # until the packages are processed
-    while final_verdict == -1:
+    while final_verdict == None:
         b.kprobe_poll()
     
     # Stop the curl_pkt_gen thread    
     stop_flag.set()
     curl_thread.join()
+    
+    # Calculate the execution time in microseconds
+    execution_time = (end_time - start_time) * 1e6
     
     # Print final results
     print("----------------------------------------- RESULT -----------------------------------------")
@@ -211,5 +224,8 @@ if __name__ == "__main__":
         print(f"\033[34m[INFO]\033[0m Destination {TARGET} from {SOURCE} is \033[32mREACHABLE\033[0m")
     else:
         print(f"\033[31m[ERROR]\033[0m Unknown error occured!")
+    print("-------------------------------------- EXECUTION TIME --------------------------------------")
+    print(f"\033[34m[INFO]\033[0m Finished in: {round(execution_time, 4)} µs")
+    
 
 #endregion
